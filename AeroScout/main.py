@@ -102,18 +102,22 @@ class AeroScoutApp:
         self._send_price_alerts(cheapest_flight, customer_emails)
 
     def _send_price_alerts(self, flight: FlightData, customer_emails: list[str]) -> None:
-        if customer_emails:
+        for email in customer_emails:
             try:
-                self.notification_manager.send_email(flight, customer_emails)
+                self.notification_manager.send_email(flight, email)
             except NotificationError:
-                logger.exception("Email alert failed.")
+                logger.exception("Email alert failed for %s.", email)
 
-        for sender in (self.notification_manager.send_whatsapp, self.notification_manager.send_sms):
+        try:
+            self.notification_manager.send_whatsapp(flight)
+        except NotificationError:
+            logger.exception("WhatsApp alert failed.")
+
+        if self.notification_manager.twilio_sms_from:
             try:
-                sender(flight)
+                self.notification_manager.send_sms(flight)
             except NotificationError:
-                logger.exception("Phone alert failed.")
-                continue
+                logger.exception("SMS alert failed.")
 
     @staticmethod
     def _destination_code(destination: dict[str, Any]) -> str:

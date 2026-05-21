@@ -145,8 +145,15 @@ class NotificationManager:
             )
             response.raise_for_status()
         except requests.RequestException as exc:
-            logger.exception("Resend email notification failed for %s recipients.", len(recipients))
-            raise NotificationError(f"Resend email notification failed: {exc}") from exc
+            response_body = ""
+            if getattr(exc, "response", None) is not None:
+                response_body = f" Response: {exc.response.text}"
+            logger.exception(
+                "Resend email notification failed for %s recipients.%s",
+                len(recipients),
+                response_body,
+            )
+            raise NotificationError(f"Resend email notification failed: {exc}{response_body}") from exc
 
         logger.info("Sent Resend email notification to %s recipients.", len(recipients))
 
