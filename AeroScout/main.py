@@ -7,15 +7,15 @@ import time
 from datetime import date, timedelta
 from typing import Any
 
-from dotenv import load_dotenv
-
 try:
+    from .config import load_environment
     from .data_manager import DataManager
     from .flight_data import FlightData, find_cheapest_flight
     from .flight_search import FlightSearch
     from .logger import setup_logger
     from .notification_manager import NotificationError, NotificationManager
 except ImportError:
+    from config import load_environment
     from data_manager import DataManager
     from flight_data import FlightData, find_cheapest_flight
     from flight_search import FlightSearch
@@ -36,7 +36,7 @@ class AeroScoutApp:
         flight_search: FlightSearch | None = None,
         notification_manager: NotificationManager | None = None,
     ) -> None:
-        load_dotenv()
+        load_environment()
 
         self.data_manager = data_manager or DataManager()
         self.flight_search = flight_search or FlightSearch()
@@ -136,7 +136,7 @@ class AeroScoutApp:
 
 def main() -> None:
     """Run the Aero Scout automation workflow."""
-    load_dotenv()
+    load_environment()
 
     interval_seconds = int(os.getenv("CHECK_INTERVAL_SECONDS", str(DEFAULT_CHECK_INTERVAL_SECONDS)))
     run_once = os.getenv("RUN_ONCE", "false").strip().lower() in {"1", "true", "yes"}

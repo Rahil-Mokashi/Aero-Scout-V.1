@@ -7,11 +7,12 @@ from typing import Any
 
 import requests
 import requests_cache
-from dotenv import load_dotenv
 
 try:
+    from .config import load_environment
     from .logger import setup_logger
 except ImportError:
+    from config import load_environment
     from logger import setup_logger
 
 
@@ -35,7 +36,7 @@ class FlightSearch:
         cache_expire_seconds: int = 900,
         timeout: int = 30,
     ) -> None:
-        load_dotenv()
+        load_environment()
 
         self.api_key = api_key or os.getenv("SERPAPI_API_KEY", "")
         if not self.api_key:

@@ -7,7 +7,10 @@ import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-from dotenv import load_dotenv
+try:
+    from .config import load_environment
+except ImportError:
+    from config import load_environment
 
 
 LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
@@ -15,7 +18,7 @@ LOG_FORMAT = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 
 def setup_logger(name: str = "aero_scout") -> logging.Logger:
     """Return an application logger configured for console and file output."""
-    load_dotenv()
+    load_environment()
 
     logger = logging.getLogger(name)
     if logger.handlers:

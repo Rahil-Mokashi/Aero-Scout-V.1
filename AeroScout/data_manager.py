@@ -10,11 +10,12 @@ import os
 from typing import Any
 
 import requests
-from dotenv import load_dotenv
 
 try:
+    from .config import load_environment
     from .logger import setup_logger
 except ImportError:
+    from config import load_environment
     from logger import setup_logger
 
 
@@ -36,7 +37,7 @@ class DataManager:
         session: requests.Session | None = None,
         timeout: int = 30,
     ) -> None:
-        load_dotenv()
+        load_environment()
 
         self.base_url = (base_url or os.getenv("SHEETY_BASE_URL", "")).rstrip("/")
         if not self.base_url:

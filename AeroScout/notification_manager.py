@@ -7,13 +7,14 @@ import smtplib
 from email.message import EmailMessage
 from typing import Iterable, Protocol
 
-from dotenv import load_dotenv
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
 try:
+    from .config import load_environment
     from .logger import setup_logger
 except ImportError:
+    from config import load_environment
     from logger import setup_logger
 
 
@@ -42,7 +43,7 @@ class NotificationManager:
         twilio_client: Client | None = None,
         smtp_factory: type[smtplib.SMTP] = smtplib.SMTP,
     ) -> None:
-        load_dotenv()
+        load_environment()
 
         self.twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "")
         self.twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "")
