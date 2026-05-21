@@ -11,6 +11,14 @@ from dotenv import load_dotenv
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
+try:
+    from .logger import setup_logger
+except ImportError:
+    from logger import setup_logger
+
+
+logger = setup_logger(__name__)
+
 
 class FlightAlert(Protocol):
     """Small interface expected from a flight alert object."""
@@ -100,7 +108,10 @@ class NotificationManager:
                     smtp.login(self.smtp_username, self.smtp_password)
                 smtp.send_message(message)
         except (OSError, smtplib.SMTPException) as exc:
+            logger.exception("Email notification failed for %s recipients.", len(recipient_list))
             raise NotificationError(f"Email notification failed: {exc}") from exc
+
+        logger.info("Sent email notification to %s recipients.", len(recipient_list))
 
     @staticmethod
     def format_low_price_alert(flight: FlightAlert) -> str:
@@ -120,8 +131,10 @@ class NotificationManager:
         try:
             message = client.messages.create(body=body, from_=from_number, to=to_number)
         except TwilioRestException as exc:
+            logger.exception("Twilio notification failed for recipient %s.", to_number)
             raise NotificationError(f"Twilio notification failed: {exc}") from exc
 
+        logger.info("Sent Twilio notification to %s.", to_number)
         return str(message.sid)
 
     def _get_twilio_client(self) -> Client:

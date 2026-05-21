@@ -12,6 +12,14 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
+try:
+    from .logger import setup_logger
+except ImportError:
+    from logger import setup_logger
+
+
+logger = setup_logger(__name__)
+
 
 class DataManagerError(RuntimeError):
     """Raised when Sheety configuration or API communication fails."""
@@ -46,12 +54,15 @@ class DataManager:
     def get_destination_data(self) -> list[dict[str, Any]]:
         """Return all destinations from the `prices` tab."""
         payload = self._request("GET", "prices")
-        return self._extract_rows(payload, "prices")
+        destinations = self._extract_rows(payload, "prices")
+        logger.info("Loaded %s destinations from Sheety.", len(destinations))
+        return destinations
 
     def update_lowest_price(self, row_id: int | str, lowest_price: int | float) -> dict[str, Any]:
         """Update the stored lowest price for one destination row."""
         payload = {"price": {"lowestPrice": lowest_price}}
         response = self._request("PUT", f"prices/{row_id}", json=payload)
+        logger.info("Updated lowest price for row %s to %s.", row_id, lowest_price)
         return response.get("price", response)
 
     def get_customer_emails(self) -> list[str]:
@@ -72,6 +83,7 @@ class DataManager:
                 emails.append(email)
                 seen.add(email)
 
+        logger.info("Loaded %s customer emails from Sheety.", len(emails))
         return emails
 
     def _build_headers(self) -> dict[str, str]:
@@ -88,14 +100,17 @@ class DataManager:
             response = self.session.request(method, url, timeout=self.timeout, **kwargs)
             response.raise_for_status()
         except requests.RequestException as exc:
+            logger.exception("Sheety API request failed: %s %s", method, url)
             raise DataManagerError(f"Sheety {method} request failed for {url}: {exc}") from exc
 
         try:
             data = response.json()
         except ValueError as exc:
+            logger.exception("Sheety returned invalid JSON: %s %s", method, url)
             raise DataManagerError(f"Sheety returned invalid JSON for {url}.") from exc
 
         if not isinstance(data, dict):
+            logger.error("Sheety returned unexpected response type: %s", type(data).__name__)
             raise DataManagerError(f"Sheety returned an unexpected response for {url}.")
 
         return data

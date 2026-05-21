@@ -9,6 +9,14 @@ import requests
 import requests_cache
 from dotenv import load_dotenv
 
+try:
+    from .logger import setup_logger
+except ImportError:
+    from logger import setup_logger
+
+
+logger = setup_logger(__name__)
+
 
 class FlightSearchError(RuntimeError):
     """Raised when flight search configuration or API communication fails."""
@@ -102,6 +110,7 @@ class FlightSearch:
             response = self.session.get(self.SEARCH_URL, params=params, timeout=self.timeout)
             response.raise_for_status()
         except requests.RequestException as exc:
+            logger.exception("SerpAPI request failed for %s to %s.", origin, destination)
             raise FlightSearchError(
                 f"SerpAPI flight search failed for {origin} to {destination}: {exc}"
             ) from exc
@@ -109,12 +118,15 @@ class FlightSearch:
         try:
             data = response.json()
         except ValueError as exc:
+            logger.exception("SerpAPI returned invalid JSON for %s to %s.", origin, destination)
             raise FlightSearchError("SerpAPI returned invalid JSON.") from exc
 
         if not isinstance(data, dict):
+            logger.error("SerpAPI returned unexpected response type: %s", type(data).__name__)
             raise FlightSearchError("SerpAPI returned an unexpected response.")
 
         if "error" in data:
+            logger.error("SerpAPI error for %s to %s: %s", origin, destination, data["error"])
             raise FlightSearchError(f"SerpAPI error: {data['error']}")
 
         data["search_metadata"] = {
@@ -125,6 +137,12 @@ class FlightSearch:
             "from_date": from_date,
             "return_date": return_date,
         }
+        logger.info(
+            "Fetched %s flight results for %s to %s.",
+            "direct" if direct_only else "stopover",
+            origin,
+            destination,
+        )
         return data
 
     @staticmethod

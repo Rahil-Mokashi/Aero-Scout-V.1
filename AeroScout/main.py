@@ -13,15 +13,18 @@ try:
     from .data_manager import DataManager
     from .flight_data import FlightData, find_cheapest_flight
     from .flight_search import FlightSearch
+    from .logger import setup_logger
     from .notification_manager import NotificationError, NotificationManager
 except ImportError:
     from data_manager import DataManager
     from flight_data import FlightData, find_cheapest_flight
     from flight_search import FlightSearch
+    from logger import setup_logger
     from notification_manager import NotificationError, NotificationManager
 
 
 DEFAULT_CHECK_INTERVAL_SECONDS = 60 * 60
+logger = setup_logger(__name__)
 
 
 class AeroScoutApp:
@@ -48,11 +51,14 @@ class AeroScoutApp:
 
     def run_once(self) -> None:
         """Run one complete price-check cycle."""
+        logger.info("Starting Aero Scout price check.")
         destinations = self.data_manager.get_destination_data()
         customer_emails = self.data_manager.get_customer_emails()
 
         for destination in destinations:
             self._check_destination(destination, customer_emails)
+
+        logger.info("Finished Aero Scout price check.")
 
     def run_forever(self, interval_seconds: int = DEFAULT_CHECK_INTERVAL_SECONDS) -> None:
         """Run the price-check cycle forever with a fixed sleep interval."""
@@ -66,6 +72,7 @@ class AeroScoutApp:
         stored_lowest_price = self._stored_lowest_price(destination)
 
         if not row_id or not destination_code or stored_lowest_price is None:
+            logger.warning("Skipping incomplete destination row: %s", destination)
             return
 
         flight_response = self.flight_search.check_flights(
@@ -78,9 +85,20 @@ class AeroScoutApp:
         cheapest_flight = find_cheapest_flight(flight_response)
 
         if cheapest_flight is None or cheapest_flight.price >= stored_lowest_price:
+            logger.info(
+                "No cheaper flight found for %s. Stored price: %s.",
+                destination_code,
+                stored_lowest_price,
+            )
             return
 
         self.data_manager.update_lowest_price(row_id, cheapest_flight.price)
+        logger.info(
+            "New low price found for %s: %s down from %s.",
+            destination_code,
+            cheapest_flight.price,
+            stored_lowest_price,
+        )
         self._send_price_alerts(cheapest_flight, customer_emails)
 
     def _send_price_alerts(self, flight: FlightData, customer_emails: list[str]) -> None:
@@ -88,12 +106,13 @@ class AeroScoutApp:
             try:
                 self.notification_manager.send_email(flight, customer_emails)
             except NotificationError:
-                pass
+                logger.exception("Email alert failed.")
 
         for sender in (self.notification_manager.send_whatsapp, self.notification_manager.send_sms):
             try:
                 sender(flight)
             except NotificationError:
+                logger.exception("Phone alert failed.")
                 continue
 
     @staticmethod
@@ -124,9 +143,11 @@ def main() -> None:
 
     app = AeroScoutApp()
     if run_once:
+        logger.info("Running Aero Scout once.")
         app.run_once()
         return
 
+    logger.info("Running Aero Scout every %s seconds.", interval_seconds)
     app.run_forever(interval_seconds=interval_seconds)
 
 
