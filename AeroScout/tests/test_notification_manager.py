@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from email.message import EmailMessage
 
+import requests
+
 from AeroScout.notification_manager import NotificationManager
 
 
@@ -83,6 +85,7 @@ def test_send_whatsapp_uses_twilio_client(monkeypatch) -> None:
 
 def test_send_email_uses_smtp(monkeypatch) -> None:
     FakeSMTP.sent_messages = []
+    monkeypatch.setenv("RESEND_API_KEY", "")
     monkeypatch.setenv("SMTP_HOST", "smtp.example.com")
     monkeypatch.setenv("SMTP_PORT", "587")
     monkeypatch.setenv("SMTP_USERNAME", "user@example.com")
@@ -96,3 +99,37 @@ def test_send_email_uses_smtp(monkeypatch) -> None:
     assert len(FakeSMTP.sent_messages) == 1
     assert FakeSMTP.sent_messages[0]["To"] == "user@example.com"
     assert FakeSMTP.sent_messages[0]["From"] == "alerts@example.com"
+
+
+def test_send_email_uses_resend_when_api_key_exists(monkeypatch) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeResendResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(
+        url: str,
+        json: dict[str, object],
+        headers: dict[str, str],
+        timeout: int,
+    ) -> FakeResendResponse:
+        calls.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
+        return FakeResendResponse()
+
+    monkeypatch.setenv("RESEND_API_KEY", "re_test")
+    monkeypatch.setenv("RESEND_API_URL", "https://api.resend.com/emails")
+    monkeypatch.setenv("EMAIL_FROM", "alerts@example.com")
+    monkeypatch.setattr(requests, "post", fake_post)
+
+    manager = NotificationManager(smtp_factory=FakeSMTP)
+
+    manager.send_email(FakeFlight(), ["user@example.com"])
+
+    assert calls[0]["url"] == "https://api.resend.com/emails"
+    assert calls[0]["headers"] == {
+        "Authorization": "Bearer re_test",
+        "Content-Type": "application/json",
+    }
+    assert calls[0]["json"]["from"] == "alerts@example.com"
+    assert calls[0]["json"]["to"] == ["user@example.com"]

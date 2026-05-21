@@ -7,6 +7,7 @@ import smtplib
 from email.message import EmailMessage
 from typing import Iterable, Protocol
 
+import requests
 from twilio.base.exceptions import TwilioRestException
 from twilio.rest import Client
 
@@ -56,6 +57,8 @@ class NotificationManager:
         self.smtp_username = os.getenv("SMTP_USERNAME", "")
         self.smtp_password = os.getenv("SMTP_PASSWORD", "")
         self.email_from = os.getenv("EMAIL_FROM", self.smtp_username)
+        self.resend_api_key = os.getenv("RESEND_API_KEY", "")
+        self.resend_api_url = os.getenv("RESEND_API_URL", "https://api.resend.com/emails")
 
         self._twilio_client = twilio_client
         self._smtp_factory = smtp_factory
@@ -93,6 +96,10 @@ class NotificationManager:
         recipient_list = self._normalize_recipients(recipients)
         if not recipient_list:
             raise NotificationError("At least one email recipient is required.")
+        if self.resend_api_key:
+            self._send_resend_email(flight, recipient_list)
+            return
+
         if not self.smtp_host or not self.email_from:
             raise NotificationError("SMTP_HOST and EMAIL_FROM are required for email alerts.")
 
@@ -113,6 +120,35 @@ class NotificationManager:
             raise NotificationError(f"Email notification failed: {exc}") from exc
 
         logger.info("Sent email notification to %s recipients.", len(recipient_list))
+
+    def _send_resend_email(self, flight: FlightAlert, recipients: list[str]) -> None:
+        if not self.email_from:
+            raise NotificationError("EMAIL_FROM is required for Resend email alerts.")
+
+        payload = {
+            "from": self.email_from,
+            "to": recipients,
+            "subject": "LOW PRICE ALERT",
+            "text": self.format_low_price_alert(flight),
+        }
+        headers = {
+            "Authorization": f"Bearer {self.resend_api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.post(
+                self.resend_api_url,
+                json=payload,
+                headers=headers,
+                timeout=30,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            logger.exception("Resend email notification failed for %s recipients.", len(recipients))
+            raise NotificationError(f"Resend email notification failed: {exc}") from exc
+
+        logger.info("Sent Resend email notification to %s recipients.", len(recipients))
 
     @staticmethod
     def format_low_price_alert(flight: FlightAlert) -> str:
