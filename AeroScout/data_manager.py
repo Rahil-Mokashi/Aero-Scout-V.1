@@ -20,6 +20,8 @@ class DataManagerError(RuntimeError):
 class DataManager:
     """Manage destination and user data stored in Google Sheets via Sheety."""
 
+    EMAIL_FIELDS = ("email", "emailAddress", "email_address", "Email Address")
+
     def __init__(
         self,
         base_url: str | None = None,
@@ -53,14 +55,19 @@ class DataManager:
         return response.get("price", response)
 
     def get_customer_emails(self) -> list[str]:
-        """Return unique customer emails from the `users` tab."""
+        """Return unique customer emails from the `users` tab.
+
+        Google Forms often names the email column "Email Address", while Sheety
+        may camel-case it to "emailAddress". We support both that form-driven
+        shape and the simpler "email" field.
+        """
         payload = self._request("GET", "users")
         users = self._extract_rows(payload, "users")
 
         emails: list[str] = []
         seen: set[str] = set()
         for user in users:
-            email = str(user.get("email", "")).strip().lower()
+            email = self._extract_email(user)
             if email and email not in seen:
                 emails.append(email)
                 seen.add(email)
@@ -100,3 +107,11 @@ class DataManager:
             raise DataManagerError(f"Sheety response field '{key}' must be a list.")
 
         return [row for row in rows if isinstance(row, dict)]
+
+    @classmethod
+    def _extract_email(cls, user: dict[str, Any]) -> str:
+        for field in cls.EMAIL_FIELDS:
+            value = user.get(field)
+            if value:
+                return str(value).strip().lower()
+        return ""
