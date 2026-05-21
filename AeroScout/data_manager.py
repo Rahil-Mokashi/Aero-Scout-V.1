@@ -1,7 +1,102 @@
-"""Google Sheets access layer for Aero Scout."""
+"""Google Sheets access layer for Aero Scout.
+
+The DataManager is the only module that knows about Sheety's API shape. The
+rest of the app can work with plain dictionaries and email lists.
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+import requests
+from dotenv import load_dotenv
+
+
+class DataManagerError(RuntimeError):
+    """Raised when Sheety configuration or API communication fails."""
 
 
 class DataManager:
     """Manage destination and user data stored in Google Sheets via Sheety."""
 
-    pass
+    def __init__(
+        self,
+        base_url: str | None = None,
+        session: requests.Session | None = None,
+        timeout: int = 30,
+    ) -> None:
+        load_dotenv()
+
+        self.base_url = (base_url or os.getenv("SHEETY_BASE_URL", "")).rstrip("/")
+        if not self.base_url:
+            raise DataManagerError("SHEETY_BASE_URL is required.")
+
+        self.timeout = timeout
+        self.session = session or requests.Session()
+        self.session.headers.update(self._build_headers())
+
+        username = os.getenv("SHEETY_USERNAME")
+        password = os.getenv("SHEETY_PASSWORD")
+        if username and password:
+            self.session.auth = (username, password)
+
+    def get_destination_data(self) -> list[dict[str, Any]]:
+        """Return all destinations from the `prices` tab."""
+        payload = self._request("GET", "prices")
+        return self._extract_rows(payload, "prices")
+
+    def update_lowest_price(self, row_id: int | str, lowest_price: int | float) -> dict[str, Any]:
+        """Update the stored lowest price for one destination row."""
+        payload = {"price": {"lowestPrice": lowest_price}}
+        response = self._request("PUT", f"prices/{row_id}", json=payload)
+        return response.get("price", response)
+
+    def get_customer_emails(self) -> list[str]:
+        """Return unique customer emails from the `users` tab."""
+        payload = self._request("GET", "users")
+        users = self._extract_rows(payload, "users")
+
+        emails: list[str] = []
+        seen: set[str] = set()
+        for user in users:
+            email = str(user.get("email", "")).strip().lower()
+            if email and email not in seen:
+                emails.append(email)
+                seen.add(email)
+
+        return emails
+
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        bearer_token = os.getenv("SHEETY_BEARER_TOKEN")
+        if bearer_token:
+            headers["Authorization"] = f"Bearer {bearer_token}"
+        return headers
+
+    def _request(self, method: str, resource: str, **kwargs: Any) -> dict[str, Any]:
+        url = f"{self.base_url}/{resource.lstrip('/')}"
+
+        try:
+            response = self.session.request(method, url, timeout=self.timeout, **kwargs)
+            response.raise_for_status()
+        except requests.RequestException as exc:
+            raise DataManagerError(f"Sheety {method} request failed for {url}: {exc}") from exc
+
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise DataManagerError(f"Sheety returned invalid JSON for {url}.") from exc
+
+        if not isinstance(data, dict):
+            raise DataManagerError(f"Sheety returned an unexpected response for {url}.")
+
+        return data
+
+    @staticmethod
+    def _extract_rows(payload: dict[str, Any], key: str) -> list[dict[str, Any]]:
+        rows = payload.get(key, [])
+        if not isinstance(rows, list):
+            raise DataManagerError(f"Sheety response field '{key}' must be a list.")
+
+        return [row for row in rows if isinstance(row, dict)]
